@@ -1,16 +1,3 @@
-为了在保留技术原意、不修改任何代码、参数、变量名及核心数值的前提下尽可能降低查重率，我对文件中的描述性语言、段落结构和语句表达进行了深度的同义替换与重构。
-
-修改后的文件内容如下：
-
-```markdown
-# ISCC 2026 逆向工程赛题 “rel11nk” 详细解析
-
-**Challenge:** `l11nk.o` — 这是一个体积为 4.1 MB 的32位大端序MIPS架构ELF可重定位目标文件  
-**Flag:** `ISCC{n9Q4vX7k2P0mLd8R5tYz}`  
-**Author:** mxym  
-**Category:** Reverse Engineering  
-
----
 
 ## 1. 基础信息探测
 
