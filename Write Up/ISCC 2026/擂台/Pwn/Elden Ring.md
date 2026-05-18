@@ -160,4 +160,6 @@ ia()
 3. 随后执行 `add(0, bin_sh_offset)` 与 `sub(2, system_offset)`，利用提前算好的偏移量做加减法，分别求出 `binsh` 字符串和 `system` 函数在内存中的绝对地址。
 4. 万事俱备，最后直接下发一条 `call` 指令完成调用，成功获取Shell！
 
+```text
 ISCC{19fjm99l-ittw-a0dg-6ygx-mvt3t17mnnlb}
+```
