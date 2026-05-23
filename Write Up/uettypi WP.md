@@ -53,8 +53,6 @@ safe_blob = urllib.parse.quote(final_blob)
 print(f"?blob={safe_blob}")
 ```
 
-
-
 ### PHP Deserialize
 
 exp：
@@ -149,4 +147,3 @@ Content-Type: application/json; charset=utf-8
   "path": "/\u0066lag"
 }
 ```
-

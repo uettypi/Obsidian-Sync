@@ -178,4 +178,3 @@ print(os.popen('cat /flag').read())
 ![image-20260308142123561](https://img.uettypi.top/2026/03/image-20260308142123561.png)
 
 ![image-20260308142212201](https://img.uettypi.top/2026/03/image-20260308142212201.png)
-
