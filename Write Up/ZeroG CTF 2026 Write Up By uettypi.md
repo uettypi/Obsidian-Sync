@@ -93,4 +93,4 @@ return redirect(url_for("gallery"))
 
 return render_template("theme_upload.html")
 ```
-2. 然后这里tong
+2. 然后这里同样存在一个SSTI模板注入，所以我们需要先构造一个
