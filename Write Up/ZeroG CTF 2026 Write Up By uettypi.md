@@ -1,4 +1,3 @@
-# 做了一下里面的Web题，WP如下（吐槽：SSTI和路径穿越杀疯了！）：
 
 ## Web_01.Space Notes / 星际便签
 典中典之Flask Jinja2模板SSTI注入，直接公式化执行env命令读取环境变量秒了：![image.png](https://img.uettypi.top/2026/05/20260523144253180.png)
@@ -136,4 +135,4 @@ def read_key_by_kid(kid: str) -> bytes:
 2. 具体的实现逻辑是，将JWT Header中的`kid`改为其他路径下的一个内容已知的文件，这样，就可以以这个文件中的内容为密钥伪造JWT了。
 3. 这里，我一开始想直接使用`../static/mission.txt`来作为`kid`，但是，这个文件的内容是空的，而用于签名JWT的密钥是不可以为空的，所以这个文件不行，得另外再找一个。
 4. 在本地构建了一个Docker后，发现了`app`路径下有一个`requirements.txt`，且其内容不为空：![image.png](https://img.uettypi.top/2026/05/20260523153339362.png)
-5. 接下来就可以使用`../requirements.txt`作为`kid`，伪造出`role`为`admin`的JWT了。最后，携带着伪造好的JWT去请求`/api/admin/flag`路由，即可获得flag。
+5. 接下来就可以使用`../requirements.txt`作为`kid`，伪造出`role`为`admin`的JWT了。最后，携带着伪造好的JWT，用GET方法去请求`/api/admin/flag`路由，即可获得flag。
