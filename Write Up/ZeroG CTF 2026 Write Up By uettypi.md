@@ -120,3 +120,20 @@ except IOError as e:
 
 raise e
 ```
+5. 最后，上传`poc.zip`即可获得flag：![image.png](https://img.uettypi.top/2026/05/20260523151455483.png)
+
+## Web_03.Orbit API / 轨道接口
+1. 审计附件中的app.py，发现存在JWT伪造漏洞：
+```python
+def read_key_by_kid(kid: str) -> bytes:
+    key_path = KEY_DIR / kid
+
+    if not key_path.exists() or not key_path.is_file():
+        raise FileNotFoundError("key not found")
+
+    return key_path.read_bytes()
+```
+2. 具体的实现逻辑是，将JWT Header中的`kid`改为其他路径下的一个内容已知的文件，这样，我们就可以以这个文件中的内容为密钥伪造JWT了。
+3. 这里，我们一般会想到直接使用`/static/mission.txt`来作为`kid`，但是，这个文件的内容是空的，而用于加密JWT的密钥是不可以为空的，所以这个文件不行。
+4. 在本地构建了一个Docker后，发现了`app`路径下有一个`requirements.txt`，且其内容不为空：![image.png](https://img.uettypi.top/2026/05/20260523153339362.png)
+5. 使用requirements.txt
