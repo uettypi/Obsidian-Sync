@@ -1,0 +1,96 @@
+# 做了一下里面的Web题，WP如下（吐槽：SSTI和路径穿越杀疯了！）：
+
+## Web_01.Space Notes / 星际便签
+典中典之Flask Jinja2模板SSTI注入，直接公式化执行env命令读取环境变量秒了：![image.png](https://img.uettypi.top/2026/05/20260523144253180.png)
+（PS：后来看到Hint中说到“拿到 SECRET_KEY 后，或许可以伪造 session。”，难道我这个算非预期？不过不管了，叽哩呱啦说啥呢？）
+
+## Web_02.Zero Upload / 零重力主题包
+1. 审计附件中的app.py，发现`/theme/upload`路由下存在ZipSlip：
+```python
+@app.route("/theme/upload", methods=["GET", "POST"])
+
+def upload_theme():
+
+if request.method == "POST":
+
+f = request.files.get("theme")
+
+  
+
+if not f or not f.filename:
+
+flash("No theme package selected")
+
+return redirect(url_for("upload_theme"))
+
+  
+
+if not f.filename.lower().endswith(".zip"):
+
+flash("Theme package must be a .zip file")
+
+return redirect(url_for("upload_theme"))
+
+  
+
+theme_id = uuid.uuid4().hex
+
+extract_root = THEME_DIR / theme_id
+
+extract_root.mkdir(parents=True, exist_ok=True)
+
+  
+
+zip_path = extract_root / "package.zip"
+
+f.save(zip_path)
+
+  
+
+try:
+
+with zipfile.ZipFile(zip_path, "r") as zf:
+
+for member in zf.infolist():
+
+target_path = extract_root / member.filename
+
+  
+
+if member.is_dir():
+
+target_path.mkdir(parents=True, exist_ok=True)
+
+continue
+
+  
+
+target_path.parent.mkdir(parents=True, exist_ok=True)
+
+  
+
+with zf.open(member, "r") as src, open(target_path, "wb") as dst:
+
+dst.write(src.read())
+
+  
+
+flash(f"Theme package imported: {theme_id}")
+
+except zipfile.BadZipFile:
+
+flash("Invalid ZIP package")
+
+except Exception as e:
+
+flash(f"Theme import error: {e}")
+
+  
+
+return redirect(url_for("gallery"))
+
+  
+
+return render_template("theme_upload.html")
+```
+2. 然后这里tong
